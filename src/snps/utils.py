@@ -180,12 +180,12 @@ def save_df_as_csv(
             df.to_csv(destination, **kwargs)
             destination.seek(0)
         elif atomic:
-            with atomic_write(destination, mode="w", overwrite=True) as f:
+            with atomic_write(destination, mode="w", newline="", overwrite=True) as f:
                 f.write(s)
                 # https://stackoverflow.com/a/29233924
                 df.to_csv(f, **kwargs)
         else:
-            with open(destination, mode="w") as f:
+            with open(destination, mode="w", newline="") as f:
                 f.write(s)
                 df.to_csv(f, **kwargs)
 
