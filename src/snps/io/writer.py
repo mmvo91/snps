@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 class Writer:
     """ Class for writing SNPs to files. """
 
-    def __init__(self, snps=None, filename="", vcf=False, atomic=True, **kwargs):
+    def __init__(self, snps=None, filename="", vcf=False, atomic=True, sample=None, **kwargs):
         """ Initialize a `Writer`.
 
         Parameters
@@ -63,6 +63,8 @@ class Writer:
             flag to save file as VCF
         atomic : bool
             atomically write output to a file on local filesystem
+        sample : str
+            Name of sample in VCF file, default 'SAMPLE'
         **kwargs
             additional parameters to `pandas.DataFrame.to_csv`
         """
@@ -70,6 +72,7 @@ class Writer:
         self._filename = filename
         self._vcf = vcf
         self._atomic = atomic
+        self._sample = sample
         self._kwargs = kwargs
 
     def write(self):
@@ -79,7 +82,7 @@ class Writer:
             return (self._write_csv(),)
 
     @classmethod
-    def write_file(cls, snps=None, filename="", vcf=False, atomic=True, **kwargs):
+    def write_file(cls, snps=None, filename="", vcf=False, atomic=True, sample=None, **kwargs):
         """ Save SNPs to file.
 
         Parameters
@@ -92,6 +95,8 @@ class Writer:
             flag to save file as VCF
         atomic : bool
             atomically write output to a file on local filesystem
+        sample : str
+            Name of sample in VCF file, default 'SAMPLE'
         **kwargs
             additional parameters to `pandas.DataFrame.to_csv`
 
@@ -102,7 +107,7 @@ class Writer:
         discrepant_vcf_position : pd.DataFrame
             SNPs with discrepant positions discovered while saving VCF
         """
-        w = cls(snps=snps, filename=filename, vcf=vcf, atomic=atomic, **kwargs)
+        w = cls(snps=snps, filename=filename, vcf=vcf, atomic=atomic, sample=sample, **kwargs)
         return w.write()
 
     def _write_csv(self):
@@ -252,7 +257,7 @@ class Writer:
 
         comment += "".join(contigs)
         comment += '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
-        comment += "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n"
+        comment += f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{self._sample or 'SAMPLE'}\n"
 
         return (
             save_df_as_csv(
