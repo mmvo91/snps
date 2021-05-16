@@ -481,7 +481,7 @@ class Resources(metaclass=Singleton):
             d = {}
             d["ID"] = chroms[i]
             d["url"] = urls[i]
-            d["path"] = os.path.relpath(path)
+            d["path"] = path
             d["assembly"] = assembly
             d["species"] = "Homo sapiens"
             d["taxonomy"] = "x"
@@ -529,7 +529,7 @@ class Resources(metaclass=Singleton):
         )
 
         if not os.path.exists(destination):
-            logger.info(f"Downloading {os.path.relpath(destination)}")
+            logger.info(f"Downloading {destination}")
 
             self._download_assembly_mapping_data(
                 destination, chroms, source_assembly, target_assembly, retries
@@ -679,7 +679,7 @@ class Resources(metaclass=Singleton):
         path : str
             path to file being downloaded
         """
-        logger.info(f"Downloading {os.path.relpath(path)}")
+        logger.info(f"Downloading {path}")
 
 
 class ReferenceSequence:
