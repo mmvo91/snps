@@ -167,6 +167,8 @@ class Reader:
             d = self.read_myheritage(file, compression)
         elif "Living DNA" in first_line:
             d = self.read_livingdna(file, compression)
+        elif "Diagnomics" in first_line:
+            d = self.read_diagnomics(file, compression)
         elif "SNP Name\trsID" in first_line or "SNP.Name\tSample.ID" in first_line:
             d = self.read_mapmygenome(file, compression, first_line)
         elif "lineage" in first_line or "snps" in first_line:
@@ -684,6 +686,38 @@ class Reader:
             )
 
         return self.read_helper("LivingDNA", parser)
+
+    def read_diagnomics(self, file, compression):
+
+        def parser():
+            df = pd.read_csv(
+                file,
+                comment="#",
+                sep="\t",
+                na_values="..",
+                dtype={
+                    'rsID': object,
+                    "Chromosome": object,
+                    "Chr Position": np.uint32,
+                    'Genotype': object
+                },
+                compression=compression,
+                index_col=False
+            )
+
+            df.rename(columns={
+                'rsID': 'rsid',
+                "Chromosome": "chrom",
+                "Chr Position": "pos",
+                'Genotype': "genotype"
+            }, inplace=True)
+
+            df.set_index('rsid', inplace=True)
+            df = df[["chrom", "pos", "genotype"]]
+
+            return (df,)
+
+        return self.read_helper("Diagnomics", parser)
 
     def read_mapmygenome(self, file, compression, header):
         """ Read and parse Mapmygenome file.
