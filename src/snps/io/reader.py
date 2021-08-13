@@ -694,12 +694,12 @@ class Reader:
                 file,
                 comment="#",
                 sep="\t",
-                na_values="..",
+                na_values=".",
                 dtype={
                     'rsID': object,
-                    "Chromosome": object,
-                    "Chr Position": np.uint32,
-                    'Genotype': object
+                    "CHROM": object,
+                    "POS": np.uint32,
+                    'GENOTYPE': object
                 },
                 compression=compression,
                 index_col=False
@@ -707,9 +707,9 @@ class Reader:
 
             df.rename(columns={
                 'rsID': 'rsid',
-                "Chromosome": "chrom",
-                "Chr Position": "pos",
-                'Genotype': "genotype"
+                "CHROM": "chrom",
+                "POS": "pos",
+                'GENOTYPE': "genotype"
             }, inplace=True)
 
             df.set_index('rsid', inplace=True)
