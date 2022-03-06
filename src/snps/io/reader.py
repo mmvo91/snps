@@ -1112,6 +1112,8 @@ class Reader:
             source = "Sano"
         elif "CODIGO46" in comments:
             source = "Codigo46"
+        elif "AKESOgen" in comments:
+            source = "AKESOgen"
         else:
             # default to generic global screening array
             source = "GSA"
