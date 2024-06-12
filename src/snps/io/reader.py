@@ -1,52 +1,19 @@
-""" Class for reading SNPs.
-
-"""
-
-"""
-BSD 3-Clause License
-
-Copyright (c) 2019, Andrew Riha
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-"""
+"""Class for reading SNPs."""
 
 import binascii
-from copy import deepcopy
 import gzip
 import io
 import logging
 import os
 import re
+import warnings
 import zipfile
 import zlib
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
+
 import pandas._libs.lib as lib
 
 logger = logging.getLogger(__name__)
@@ -129,7 +96,6 @@ class Reader:
 
         # peek into files to determine the data format
         if isinstance(file, str) and os.path.exists(file):
-
             if ".zip" in file:
                 with zipfile.ZipFile(file) as z:
                     with z.open(z.namelist()[0], "r") as f:
@@ -148,7 +114,6 @@ class Reader:
                     )
 
         elif isinstance(file, bytes):
-
             first_line, comments, data, compression = self._handle_bytes_data(file)
             file = io.BytesIO(file)
 
@@ -156,8 +121,22 @@ class Reader:
             return d
 
         if "23andMe" in first_line:
-            d = self.read_23andme(file, compression)
-        elif "Ancestry" in first_line:
+            # some 23andMe files have separate alleles
+            if comments.endswith(
+                "# rsid\tchromosome\tposition\tallele1\tallele2\n"
+            ) or comments.endswith(
+                "# rsid\tchromosome\tposition\tallele1\tallele2\r\n"
+            ):
+                d = self.read_23andme(file, compression, joined=False)
+            # some 23andMe files have a combined genotype
+            elif comments.endswith(
+                "# rsid\tchromosome\tposition\tgenotype\n"
+            ) or comments.endswith("# rsid\tchromosome\tposition\tgenotype\r\n"):
+                d = self.read_23andme(file, compression, joined=True)
+            # something we havent seen before and can't handle
+            else:
+                return d
+        elif "AncestryDNA" in first_line:
             d = self.read_ancestry(file, compression)
         elif first_line.startswith("RSID"):
             d = self.read_ftdna(file, compression)
@@ -188,6 +167,8 @@ class Reader:
         elif first_line.startswith("[Header]"):
             # Global Screening Array, includes SANO and CODIGO46
             d = self.read_gsa(file, compression, comments)
+        elif "Circle" in first_line:
+            d = self.read_circledna(file, compression)
         elif first_line == "Sample ID\tSNP Name\tChr\tPosition\tAllele1 - Forward\tAllele2 - Forward\r\n":
             d = self.read_gsa(file, compression, comments, source="SlopesBio", names=first_line.strip().split('\t'))
 
@@ -199,31 +180,9 @@ class Reader:
 
     @classmethod
     def read_file(cls, file, only_detect_source, resources, rsids):
-        """Read `file`.
-
-        Parameters
-        ----------
-        file : str or bytes
-            path to file to load or bytes to load
-        only_detect_source : bool
-            only detect the source of the data
-        resources : Resources
-            instance of Resources
-        rsids : tuple
-            rsids to extract if loading a VCF file
-
-        Returns
-        -------
-        dict
-            dict with the following items:
-
-            snps (pandas.DataFrame)
-                dataframe of parsed SNPs
-            source (str)
-                detected source of SNPs
-            phased (bool)
-                flag indicating if SNPs are phased
-        """
+        warnings.warn(
+            "This method will be removed in a future release.", DeprecationWarning
+        )
         r = cls(file, only_detect_source, resources, rsids)
         return r.read()
 
@@ -434,7 +393,7 @@ class Reader:
 
         return {"snps": df, "source": source, "phased": phased, "build": build}
 
-    def read_23andme(self, file, compression):
+    def read_23andme(self, file, compression, joined=True):
         """Read and parse 23andMe file.
 
         https://www.23andme.com
@@ -451,15 +410,18 @@ class Reader:
         """
 
         def parser():
+            if joined:
+                columnnames = ["rsid", "chrom", "pos", "genotype"]
+            else:
+                columnnames = ["rsid", "chrom", "pos", "allele1", "allele2"]
             df = pd.read_csv(
                 file,
                 comment="#",
                 sep="\t",
-                na_values="--",
-                names=["rsid", "chrom", "pos", "genotype"],
+                na_values=["--", "-"],
+                names=columnnames,
                 compression=compression,
             )
-            df = df.dropna(subset=["rsid", "chrom", "pos"])
             # turn number numbers into string numbers
             df["chrom"] = df["chrom"].map(
                 {
@@ -512,6 +474,12 @@ class Reader:
                     "MT": "MT",
                 }
             )
+            if not joined:
+                # stick separate alleles together
+                df["genotype"] = df["allele1"] + df["allele2"]
+                del df["allele1"]
+                del df["allele2"]
+            df = df.dropna(subset=["rsid", "chrom", "pos"])
             df = df.astype(dtype=NORMALIZED_DTYPES)
             df = df.set_index("rsid")
             return (df,)
@@ -710,7 +678,6 @@ class Reader:
         """
 
         def parser():
-
             if isinstance(file, str):
                 with open(file, "rb") as f:
                     first_line, comments, data, comrpession = self._handle_bytes_data(
@@ -781,7 +748,6 @@ class Reader:
         return self.read_helper("LivingDNA", parser)
 
     def read_diagnomics(self, file, compression):
-
         def parser():
             df = pd.read_csv(
                 file,
@@ -896,7 +862,6 @@ class Reader:
 
     def _read_gsa_helper(self, file, source, names=None):
         def parser():
-
             # read the comments so we get to the actual data
             if isinstance(file, str):
                 try:
@@ -1157,6 +1122,59 @@ class Reader:
 
         return self.read_helper("DNA.Land", parser)
 
+    def read_circledna(self, file, compression):
+        """Read and parse CircleDNA file.
+
+        https://circledna.com/
+
+        Notes
+        -----
+        This method attempts to read and parse a whole exome file, optionally compressed
+        with gzip or zip. Some assumptions are made throughout this process:
+
+            * SNPs that are not annotated with an RSID are skipped
+            * Insertions and deletions are skipped
+
+        Parameters
+        ----------
+        file : str or bytes
+            path to file or bytes to load
+
+        Returns
+        -------
+        dict
+            result of `read_helper`
+        """
+
+        def parser():
+            rs_chunks = []
+            with pd.read_csv(
+                file,
+                comment="#",
+                sep="\t",
+                chunksize=10000,
+                names=["rsid", "chrom", "pos", "genotype"],
+                compression=compression,
+            ) as reader:
+                for chunk in reader:
+                    # filter for SNPs with rsids
+                    tmp = chunk.loc[
+                        (chunk.rsid.str.startswith("rs"))
+                        & (chunk.genotype.str.len() == 3)
+                    ]
+                    if len(tmp) > 0:
+                        rs_chunks.append(tmp)
+
+            df = pd.concat(rs_chunks)
+            df.chrom = df.chrom.str[3:]
+            df.genotype = df.genotype.apply(lambda x: "".join(x.split("/")))
+            df = df.astype(NORMALIZED_DTYPES)
+            df.set_index("rsid", inplace=True)
+
+            return (df,)
+
+        return self.read_helper("CircleDNA", parser)
+
     def read_snps_csv(self, file, comments, compression):
         """Read and parse CSV file generated by ``snps``.
 
@@ -1338,7 +1356,6 @@ class Reader:
         logged_multi_sample = False
 
         with io.TextIOWrapper(io.BufferedReader(f)) as file:
-
             for line in file:
                 line_strip = line.strip("\n")
 

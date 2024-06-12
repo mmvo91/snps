@@ -1,52 +1,19 @@
-"""
-BSD 3-Clause License
-
-Copyright (c) 2019, Andrew Riha
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-"""
-
 import gzip
 import os
 import socket
 import tempfile
-from unittest.mock import Mock, mock_open, patch
 import urllib.error
 import warnings
 import zipfile
+from unittest.mock import Mock, mock_open, patch
 
-from atomicwrites import atomic_write
 import numpy as np
 import pandas as pd
-
+from atomicwrites import atomic_write
 from snps import SNPs
-from snps.resources import Resources, ReferenceSequence
+from snps.resources import ReferenceSequence, Resources
 from snps.utils import gzip_file
+
 from tests import BaseSNPsTestCase
 
 
@@ -103,25 +70,33 @@ class TestResources(BaseSNPsTestCase):
         self.assertEqual(len(gsa_resources["dbsnp_151_37_reverse"]), 2393418)
 
     def _generate_test_gsa_resources(self):
-        s = "Name\tRsID\n"
+        lines = ["Name\tRsID"]
+
         for i in range(1, 618541):
-            s += f"rs{i}\trs{i}\n"
+            lines.append(f"rs{i}\trs{i}")
+
+        s = "\n".join(lines)
         mock = mock_open(read_data=gzip.compress(s.encode()))
         with patch("urllib.request.urlopen", mock):
             self.resource.get_gsa_rsid()
 
-        s = "Name\tChr\tMapInfo\tdeCODE(cM)\n"
+        lines = ["Name\tChr\tMapInfo\tdeCODE(cM)"]
+
         for i in range(1, 665609):
-            s += f"rs{i}\t1\t{i}\t0.0000\n"
+            lines.append(f"rs{i}\t1\t{i}\t0.0000")
+
+        s = "\n".join(lines)
 
         mock = mock_open(read_data=gzip.compress(s.encode()))
         with patch("urllib.request.urlopen", mock):
             self.resource.get_gsa_chrpos()
 
-        s = "# comment\n"
-        s += "rs1 0.0 0.0 0.0 0.0\n"
+        lines = ["# comment", "rs1 0.0 0.0 0.0 0.0"]
+
         for i in range(2, 2393419):
-            s += f"rs{i}\n"
+            lines.append(f"rs{i}")
+
+        s = "\n".join(lines)
 
         mock = mock_open(read_data=gzip.compress(s.encode()))
         with patch("urllib.request.urlopen", mock):
@@ -131,6 +106,8 @@ class TestResources(BaseSNPsTestCase):
         def f():
             # mock download of test data for each resource
             self._generate_test_gsa_resources()
+            self._generate_test_chip_clusters()
+            self._generate_test_low_quality_snps()
 
             # generate test data for permutations of remapping data
             effects = [{"mappings": []} for _ in range(1, 26)]
@@ -485,3 +462,41 @@ class TestResources(BaseSNPsTestCase):
             )
 
             self.resource._resources_dir = "resources"
+
+    def _generate_test_chip_clusters(self):
+        s = "1:1\tc1\n" * 2135214
+        mock = mock_open(read_data=gzip.compress(s.encode()))
+        with patch("urllib.request.urlopen", mock):
+            self.resource.get_chip_clusters()
+
+    def test_get_chip_clusters(self):
+        def f():
+            # mock download of test data for chip clusters
+            self._generate_test_chip_clusters()
+            # load test resource
+            return self.resource.get_chip_clusters()
+
+        chip_clusters = (
+            self.resource.get_chip_clusters() if self.downloads_enabled else f()
+        )
+
+        self.assertEqual(len(chip_clusters), 2135214)
+
+    def _generate_test_low_quality_snps(self):
+        s = "c1\t" + "1:1," * 56024 + "1:1\n"
+        mock = mock_open(read_data=gzip.compress(s.encode()))
+        with patch("urllib.request.urlopen", mock):
+            self.resource.get_low_quality_snps()
+
+    def test_get_low_quality_snps(self):
+        def f():
+            # mock download of test data for low quality SNPs
+            self._generate_test_low_quality_snps()
+            # load test resource
+            return self.resource.get_low_quality_snps()
+
+        low_quality_snps = (
+            self.resource.get_low_quality_snps() if self.downloads_enabled else f()
+        )
+
+        self.assertEqual(len(low_quality_snps), 56025)

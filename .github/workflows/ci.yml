@@ -11,64 +11,77 @@ on:
   schedule:
     - cron: '37 4 * * 0'
   push:
-    branches: '**'
+    branches:
+      - '**'
   pull_request:
-    branches: '**'
+    branches:
+      - '**'
 
 jobs:
-  lint:
+  enable-workflow:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'schedule' && github.repository == 'apriha/snps') }}
+    steps:
+      - name: Enable workflow based on preconditions
+        run: echo "Workflow enabled."
+
+  lint-format:
+    needs: [enable-workflow]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-python@v2
-    - name: Install Black
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install Ruff
       run: |
-        pip install black
-    - name: Lint with Black
+        pip install ruff
+    - name: Lint with Ruff
       run: |
-        black --check --diff .
+        ruff check
+    - name: Format with Ruff
+      run: |
+        ruff format --check
 
   build-docs:
+    needs: [enable-workflow]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     - name: Install Sphinx
       run: |
-        pip install sphinx sphinx-rtd-theme
+        pip install -r docs/requirements.txt
         pip install .
     - name: Build docs with Sphinx
       run: |
         sphinx-build -W --keep-going -T -E -D language=en docs docs/_build
 
   test:
-    needs: [lint, build-docs]
+    needs: [lint-format, build-docs]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
         include:
-          - os: ubuntu-latest
-            python-version: 3.7
-            job_id: 0
-          - os: ubuntu-latest
-            python-version: 3.8
-            job_id: 1
-          - os: ubuntu-latest
-            python-version: 3.9
-            job_id: 2
           - os: macos-latest
-            python-version: 3.9
-            job_id: 3
+            python-version: '3.12'
           - os: windows-latest
-            python-version: 3.9
-            job_id: 4
+            python-version: '3.12'
+
+    env:
+      JOB_ID: ${{ strategy.job-index }}
+      NUM_JOBS: ${{ strategy.job-total }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         persist-credentials: false
     - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Ensure Python and source code are on same drive (Windows)
@@ -82,9 +95,6 @@ jobs:
       # PRs and the master branch; note that the master branch is tested weekly via `cron`,
       # so this ensures all Python versions will be periodically integration tested with the
       # resource servers
-      env:
-        NUM_JOBS: 5
-        JOB_ID: ${{ matrix.job_id }}
       if: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/master' }}
       shell: bash
       run: |
@@ -95,7 +105,7 @@ jobs:
         fi
     - name: Install dependencies
       run: |
-        pip install coverage==6.2 pytest-cov
+        pip install pytest-cov
         pip install .
     - name: Test with pytest (Ubuntu & macOS)
       if: ${{ matrix.os != 'windows-latest' }}
@@ -106,33 +116,30 @@ jobs:
       working-directory: C:\a\snps\snps
       run: |
         pytest --cov=snps tests
-    - name: Upload coverage to Codecov (Ubuntu & macOS)
-      if: ${{ matrix.os != 'windows-latest' }}
-      uses: codecov/codecov-action@v1
-      with:
-        fail_ci_if_error: true
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
 
   test-extras:
-    needs: [test]
+    needs: [lint-format, build-docs]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: [3.7, 3.8, 3.9]
+        python-version: ['3.8', '3.9', '3.10', '3.11']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         persist-credentials: false
     - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
         pip install --upgrade pip setuptools wheel
-        pip install coverage==6.2 pytest-cov
+        pip install pytest-cov
         pip install .[ezancestry]
     - name: Test with pytest
       run: |

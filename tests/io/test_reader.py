@@ -1,43 +1,10 @@
-"""
-BSD 3-Clause License
-
-Copyright (c) 2019, Andrew Riha
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-"""
-
 import os
 import tempfile
 
 from atomicwrites import atomic_write
-
 from snps.resources import Resources
 from snps.utils import gzip_file
+
 from tests import BaseSNPsTestCase
 
 
@@ -99,6 +66,16 @@ class TestReader(BaseSNPsTestCase):
         # https://www.23andme.com
         self.run_parsing_tests("tests/input/23andme.txt", "23andMe")
 
+    def test_read_23andme_allele(self):
+        # https://www.23andme.com
+        # some files have split allele columns
+        self.run_parsing_tests("tests/input/23andme_allele.txt", "23andMe")
+
+    def test_read_23andme_win(self):
+        # https://www.23andme.com
+        # windows line endings
+        self.run_parsing_tests("tests/input/23andme_win.txt", "23andMe")
+
     def test_read_23andme_build36(self):
         self.run_build_detection_test(
             self.run_parsing_tests,
@@ -127,7 +104,7 @@ class TestReader(BaseSNPsTestCase):
         # https://www.ancestry.com
 
         total_snps = 100
-        s = "#Ancestry\r\n"
+        s = "#AncestryDNA\r\n"
         s += "rsid\tchromosome\tposition\tallele1\tallele2\r\n"
         # add extra tab separator in first line
         s += "rs1\t1\t101\t\tA\tA\r\n"
@@ -170,6 +147,12 @@ class TestReader(BaseSNPsTestCase):
     def test_read_DNALand(self):
         # https://dna.land/
         self.run_parsing_tests("tests/input/DNALand.txt", "DNA.Land")
+
+    def test_read_circledna(self):
+        # https://circledna.com/
+        df = self.generic_snps()
+        df.drop("rs5", inplace=True)  # only called genotypes
+        self.run_parsing_tests("tests/input/circledna.txt", "CircleDNA", snps_df=df)
 
     def test_read_ftdna(self):
         # https://www.familytreedna.com
@@ -408,3 +391,6 @@ class TestReader(BaseSNPsTestCase):
         self.run_parsing_tests_vcf(
             "tests/input/unannotated_testvcf.vcf", "vcf", unannotated=True, build=0
         )
+
+    def test_read_vcf_chr_prefix(self):
+        self.run_parsing_tests_vcf("tests/input/testvcf_chr_prefix.vcf")

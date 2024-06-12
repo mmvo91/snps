@@ -1,46 +1,12 @@
-"""
-BSD 3-Clause License
-
-Copyright (c) 2019, Andrew Riha
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-"""
-
 import os
 import shutil
 import tempfile
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_object_dtype, is_unsigned_integer_dtype
-
 from snps import SNPs
 from snps.utils import gzip_file, zip_file
 
@@ -545,13 +511,16 @@ class BaseSNPsTestCase(TestCase):
 
     def generic_snps_vcf(self):
         df = self.generic_snps()
-        return df.append(
-            self.create_snp_df(
-                rsid=["rs" + str(i) for i in range(12, 18)],
-                chrom=["1"] * 6,
-                pos=list(range(112, 118)),
-                genotype=[np.nan] * 6,
-            )
+        return pd.concat(
+            [
+                df,
+                self.create_snp_df(
+                    rsid=["rs" + str(i) for i in range(12, 18)],
+                    chrom=["1"] * 6,
+                    pos=list(range(112, 118)),
+                    genotype=[np.nan] * 6,
+                ),
+            ]
         )
 
     def run_parsing_tests(
@@ -708,8 +677,10 @@ class BaseSNPsTestCase(TestCase):
         pd.testing.assert_frame_equal(snps.snps, snps_df, check_exact=True)
         self.assertTrue(snps.phased) if phased else self.assertFalse(snps.phased)
         self.assertEqual(snps.build, build)
-        self.assertTrue(snps.build_detected) if build_detected else self.assertFalse(
-            snps.build_detected
+        (
+            self.assertTrue(snps.build_detected)
+            if build_detected
+            else self.assertFalse(snps.build_detected)
         )
         self.make_normalized_dataframe_assertions(snps.snps)
 
@@ -726,15 +697,36 @@ class BaseSNPsTestCase(TestCase):
             self.assertEqual(0, snps.count)
         else:
             self.assertFalse(snps.unannotated_vcf)
-            pd.testing.assert_frame_equal(
-                snps.snps, snps_df.loc[rsids], check_exact=True
-            ) if rsids else pd.testing.assert_frame_equal(
-                snps.snps, snps_df, check_exact=True
+            (
+                pd.testing.assert_frame_equal(
+                    snps.snps, snps_df.loc[rsids], check_exact=True
+                )
+                if rsids
+                else pd.testing.assert_frame_equal(snps.snps, snps_df, check_exact=True)
             )
 
         self.assertTrue(snps.phased) if phased else self.assertFalse(snps.phased)
         self.assertEqual(snps.build, build)
-        self.assertTrue(snps.build_detected) if build_detected else self.assertFalse(
-            snps.build_detected
+        (
+            self.assertTrue(snps.build_detected)
+            if build_detected
+            else self.assertFalse(snps.build_detected)
         )
         self.make_normalized_dataframe_assertions(snps.snps)
+
+    def get_low_quality_snps(self, pos=(104, 106, 1001), cluster="c1"):
+        df = pd.DataFrame(
+            {"chrom": ["1"] * len(pos), "pos": pos, "cluster": [cluster] * len(pos)},
+            columns=["chrom", "pos", "cluster"],
+        )
+        df.chrom = df.chrom.astype(pd.CategoricalDtype(ordered=False))
+        df.pos = df.pos.astype(np.uint32)
+        df.cluster = df.cluster.astype(pd.CategoricalDtype(ordered=False))
+        return df
+
+    def run_low_quality_snps_test(self, f, low_quality_snps, cluster="c1"):
+        mock1 = PropertyMock(return_value=cluster)
+        mock2 = Mock(return_value=low_quality_snps)
+        with patch("snps.SNPs.cluster", mock1):
+            with patch("snps.resources.Resources.get_low_quality_snps", mock2):
+                f()

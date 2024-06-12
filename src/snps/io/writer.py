@@ -1,48 +1,14 @@
-""" Class for writing SNPs.
+"""Class for writing SNPs."""
 
-"""
-
-"""
-BSD 3-Clause License
-
-Copyright (c) 2019, Andrew Riha
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-"""
-
-import datetime
 import logging
+import warnings
 
 import numpy as np
 import pandas as pd
 
 import snps
-from snps.utils import save_df_as_csv, clean_str
+from snps.io import get_empty_snps_dataframe
+from snps.utils import clean_str, get_utc_now, save_df_as_csv
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +16,19 @@ logger = logging.getLogger(__name__)
 class Writer:
     """Class for writing SNPs to files."""
 
-    def __init__(self, snps=None, filename="", vcf=False, atomic=True, sample=None, **kwargs):
+    def __init__(
+        self,
+        snps=None,
+        filename="",
+        vcf=False,
+        atomic=True,
+        sample=None,
+        vcf_alt_unavailable=".",
+        vcf_chrom_prefix="",
+        vcf_qc_only=False,
+        vcf_qc_filter=False,
+        **kwargs,
+    ):
         """Initialize a `Writer`.
 
         Parameters
@@ -63,6 +41,14 @@ class Writer:
             flag to save file as VCF
         atomic : bool
             atomically write output to a file on local filesystem
+        vcf_alt_unavailable : str
+            representation of VCF ALT allele when ALT is not able to be determined
+        vcf_chrom_prefix : str
+            prefix for chromosomes in VCF CHROM column
+        vcf_qc_only : bool
+            for VCF, output only SNPs that pass quality control
+        vcf_qc_filter : bool
+            for VCF, populate VCF FILTER column based on quality control results
         sample : str
             Name of sample in VCF file, default 'SAMPLE'
         **kwargs
@@ -72,33 +58,15 @@ class Writer:
         self._filename = filename
         self._vcf = vcf
         self._atomic = atomic
+        self._vcf_alt_unavailable = vcf_alt_unavailable
+        self._vcf_chrom_prefix = vcf_chrom_prefix
+        self._vcf_qc_only = vcf_qc_only
+        self._vcf_qc_filter = vcf_qc_filter
         self._sample = sample
         self._kwargs = kwargs
 
     def write(self):
-        if self._vcf:
-            return self._write_vcf()
-        else:
-            return (self._write_csv(),)
-
-    @classmethod
-    def write_file(cls, snps=None, filename="", vcf=False, atomic=True, sample=None, **kwargs):
-        """Save SNPs to file.
-
-        Parameters
-        ----------
-        snps : SNPs
-            SNPs to save to file or write to buffer
-        filename : str or buffer
-            filename for file to save or buffer to write to
-        vcf : bool
-            flag to save file as VCF
-        atomic : bool
-            atomically write output to a file on local filesystem
-        sample : str
-            Name of sample in VCF file, default 'SAMPLE'
-        **kwargs
-            additional parameters to `pandas.DataFrame.to_csv`
+        """Write SNPs to file or buffer.
 
         Returns
         -------
@@ -107,7 +75,38 @@ class Writer:
         discrepant_vcf_position : pd.DataFrame
             SNPs with discrepant positions discovered while saving VCF
         """
-        w = cls(snps=snps, filename=filename, vcf=vcf, atomic=atomic, sample=sample, **kwargs)
+        if self._vcf:
+            return self._write_vcf()
+        else:
+            return (self._write_csv(),)
+
+    @classmethod
+    def write_file(
+        cls,
+        snps=None,
+        filename="",
+        vcf=False,
+        atomic=True,
+        vcf_alt_unavailable=".",
+        vcf_qc_only=False,
+        vcf_qc_filter=False,
+        sample=None,
+        **kwargs,
+    ):
+        warnings.warn(
+            "This method will be removed in a future release.", DeprecationWarning
+        )
+        w = cls(
+            snps=snps,
+            filename=filename,
+            vcf=vcf,
+            atomic=atomic,
+            vcf_alt_unavailable=vcf_alt_unavailable,
+            vcf_qc_only=vcf_qc_only,
+            vcf_qc_filter=vcf_qc_filter,
+            sample=sample,
+            **kwargs,
+        )
         return w.write()
 
     def _write_csv(self):
@@ -172,7 +171,7 @@ class Writer:
 
         comment = (
             f"##fileformat=VCFv4.2\n"
-            f'##fileDate={datetime.datetime.utcnow().strftime("%Y%m%d")}\n'
+            f'##fileDate={get_utc_now().strftime("%Y%m%d")}\n'
             f'##source="{self._snps.source}; snps v{snps.__version__}; https://pypi.org/project/snps/"\n'
         )
 
@@ -234,6 +233,16 @@ class Writer:
                     "assembly": self._snps.assembly,
                     "chrom": chrom,
                     "snps": pd.DataFrame(df.loc[(df["chrom"] == chrom)]),
+                    "cluster": (
+                        self._snps.cluster
+                        if self._vcf_qc_only or self._vcf_qc_filter
+                        else ""
+                    ),
+                    "low_quality_snps": (
+                        self._snps.low_quality
+                        if self._vcf_qc_only or self._vcf_qc_filter
+                        else get_empty_snps_dataframe()
+                    ),
                 }
             )
 
@@ -256,6 +265,10 @@ class Writer:
         discrepant_vcf_position = pd.concat(discrepant_vcf_position)
 
         comment += "".join(contigs)
+
+        if self._vcf_qc_filter and self._snps.cluster:
+            comment += '##FILTER=<ID=lq,Description="Low quality SNP per Lu et al.: https://doi.org/10.1016/j.csbj.2021.06.040">\n'
+
         comment += '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
         comment += f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{self._sample or 'SAMPLE'}\n"
 
@@ -279,6 +292,8 @@ class Writer:
         assembly = task["assembly"]
         chrom = task["chrom"]
         snps = task["snps"]
+        cluster = task["cluster"]
+        low_quality_snps = task["low_quality_snps"]
 
         if len(snps.loc[snps["genotype"].notnull()]) == 0:
             return {
@@ -291,6 +306,16 @@ class Writer:
         seq = seqs[chrom]
 
         contig = f'##contig=<ID={seq.ID},URL={seq.url},length={seq.length},assembly={seq.build},md5={seq.md5},species="{seq.species}">\n'
+
+        if self._vcf_qc_only and cluster:
+            # drop low quality SNPs if SNPs object maps to a cluster
+            snps = snps.drop(snps.index.intersection(low_quality_snps.index))
+
+        if self._vcf_qc_filter and cluster:
+            # initialize filter for  all SNPs if SNPs object maps to a cluster,
+            snps["filter"] = "PASS"
+            # then indicate SNPs that were identified as low quality
+            snps.loc[snps.index.intersection(low_quality_snps.index), "filter"] = "lq"
 
         snps = snps.reset_index()
 
@@ -323,9 +348,12 @@ class Writer:
             }
         )
 
-        df["CHROM"] = snps["chrom"]
+        df["CHROM"] = self._vcf_chrom_prefix + snps["chrom"]
         df["POS"] = snps["pos"]
         df["ID"] = snps["rsid"]
+
+        if self._vcf_qc_filter and cluster:
+            df["FILTER"] = snps["filter"]
 
         # drop SNPs with discrepant positions (outside reference sequence)
         discrepant_vcf_position = snps.loc[
@@ -370,7 +398,7 @@ class Writer:
 
         if ref in genotype_alleles:
             if len(genotype_alleles) == 1:
-                return "N"
+                return self._vcf_alt_unavailable
             else:
                 genotype_alleles.remove(ref)
                 return genotype_alleles.pop(0)

@@ -1,6 +1,6 @@
 .. image:: https://raw.githubusercontent.com/apriha/snps/master/docs/images/snps_banner.png
 
-|ci| |codecov| |docs| |pypi| |python| |downloads| |black|
+|ci| |codecov| |docs| |pypi| |python| |downloads| |ruff|
 
 snps
 ====
@@ -29,6 +29,7 @@ Build / Assembly Detection and Remapping
 
 Data Cleaning
 `````````````
+- Perform quality control (QC) / filter low quality SNPs based on `chip clusters <https://doi.org/10.1016/j.csbj.2021.06.040>`_
 - Fix several common issues when loading SNPs
 - Sort SNPs based on chromosome and position
 - Deduplicate RSIDs
@@ -39,6 +40,7 @@ Data Cleaning
 Analysis
 ````````
 - Derive sex from SNPs
+- Detect deduced genotype / chip array and chip version based on `chip clusters <https://doi.org/10.1016/j.csbj.2021.06.040>`_
 - Predict ancestry from SNPs (when installed with `ezancestry <https://github.com/arvkevi/ezancestry>`_)
 
 Supported Genotype Files
@@ -48,6 +50,7 @@ genotype files from the following DNA testing sources:
 
 - `23andMe <https://www.23andme.com>`_
 - `Ancestry <https://www.ancestry.com>`_
+- `CircleDNA <https://circledna.com/>`_
 - `Código 46 <https://codigo46.com.mx>`_
 - `DNA.Land <https://dna.land>`_
 - `Family Tree DNA <https://www.familytreedna.com>`_
@@ -62,7 +65,7 @@ Additionally, ``snps`` can read a variety of "generic" CSV and TSV files.
 
 Dependencies
 ------------
-``snps`` requires `Python <https://www.python.org>`_ 3.7.1+ and the following Python
+``snps`` requires `Python <https://www.python.org>`_ 3.8+ and the following Python
 packages:
 
 - `numpy <http://www.numpy.org>`_
@@ -212,14 +215,14 @@ Ok, so far we've merged the SNPs from two files (ensuring the same build in the 
 identifying discrepancies along the way). Then, we remapped the SNPs to Build 38. Now, let's save
 the merged and remapped dataset consisting of 1M+ SNPs to a tab-separated values (TSV) file:
 
->>> saved_snps = s.save("out.txt")
+>>> saved_snps = s.to_tsv("out.txt")
 Saving output/out.txt
 >>> print(saved_snps)
 output/out.txt
 
 Moreover, let's get the reference sequences for this assembly and save the SNPs as a VCF file:
 
->>> saved_snps = s.save("out.vcf", vcf=True)
+>>> saved_snps = s.to_vcf("out.vcf")
 Downloading resources/fasta/GRCh38/Homo_sapiens.GRCh38.dna.chromosome.1.fa.gz
 Downloading resources/fasta/GRCh38/Homo_sapiens.GRCh38.dna.chromosome.2.fa.gz
 Downloading resources/fasta/GRCh38/Homo_sapiens.GRCh38.dna.chromosome.3.fa.gz
@@ -263,6 +266,13 @@ Acknowledgements
 Thanks to Mike Agostino, Padma Reddy, Kevin Arvai, `openSNP <https://opensnp.org>`_,
 `Open Humans <https://www.openhumans.org>`_, and `Sano Genetics <https://sanogenetics.com>`_.
 
+``snps`` incorporates code and concepts generated with the assistance of
+`OpenAI's <https://openai.com>`_ `ChatGPT <https://chat.openai.com>`_ (GPT-3.5). ✨
+
+License
+-------
+``snps`` is licensed under the `BSD 3-Clause License <https://github.com/apriha/snps/blob/master/LICENSE.txt>`_.
+
 .. https://github.com/rtfd/readthedocs.org/blob/master/docs/badges.rst
 .. |ci| image:: https://github.com/apriha/snps/actions/workflows/ci.yml/badge.svg?branch=master
    :target: https://github.com/apriha/snps/actions/workflows/ci.yml
@@ -276,5 +286,6 @@ Thanks to Mike Agostino, Padma Reddy, Kevin Arvai, `openSNP <https://opensnp.org
    :target: https://www.python.org
 .. |downloads| image:: https://pepy.tech/badge/snps
    :target: https://pepy.tech/project/snps
-.. |black| image:: https://img.shields.io/badge/code%20style-black-000000.svg
-   :target: https://github.com/psf/black
+.. |ruff| image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
+   :target: https://github.com/astral-sh/ruff
+   :alt: Ruff

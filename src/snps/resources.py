@@ -1,4 +1,4 @@
-""" Class for downloading and loading required external resources.
+"""Class for downloading and loading required external resources.
 
 References
 ----------
@@ -10,39 +10,6 @@ References
 3. Yates et. al. (doi:10.1093/bioinformatics/btu613),
    `<http://europepmc.org/search/?query=DOI:10.1093/bioinformatics/btu613>`_
 4. Zerbino et. al. (doi.org/10.1093/nar/gkx1098), https://doi.org/10.1093/nar/gkx1098
-
-"""
-
-"""
-BSD 3-Clause License
-
-Copyright (c) 2019, Andrew Riha
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """
 
@@ -59,12 +26,12 @@ import urllib.error
 import urllib.request
 import zipfile
 
-from atomicwrites import atomic_write
 import numpy as np
 import pandas as pd
+from atomicwrites import atomic_write
 
 from snps.ensembl import EnsemblRestClient
-from snps.utils import create_dir, Singleton
+from snps.utils import Singleton, create_dir
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +57,8 @@ class Resources(metaclass=Singleton):
         self._gsa_chrpos_map = None
         self._dbsnp_151_37_reverse = None
         self._opensnp_datadump_filenames = []
+        self._chip_clusters = None
+        self._low_quality_snps = None
 
     def get_reference_sequences(
         self,
@@ -235,6 +204,8 @@ class Resources(metaclass=Singleton):
                 source, target
             )
         resources["gsa_resources"] = self.get_gsa_resources()
+        resources["chip_clusters"] = self.get_chip_clusters()
+        resources["low_quality_snps"] = self.get_low_quality_snps()
         return resources
 
     def get_all_reference_sequences(self, **kwargs):
@@ -268,6 +239,98 @@ class Resources(metaclass=Singleton):
             "chrpos_map": self.get_gsa_chrpos(),
             "dbsnp_151_37_reverse": self.get_dbsnp_151_37_reverse(),
         }
+
+    def get_chip_clusters(self):
+        """Get resource for identifying deduced genotype / chip array based on chip clusters.
+
+        Returns
+        -------
+        pandas.DataFrame
+
+        References
+        ----------
+        1. Chang Lu, Bastian Greshake Tzovaras, Julian Gough, A survey of
+           direct-to-consumer genotype data, and quality control tool
+           (GenomePrep) for research, Computational and Structural
+           Biotechnology Journal, Volume 19, 2021, Pages 3747-3754, ISSN
+           2001-0370, https://doi.org/10.1016/j.csbj.2021.06.040.
+        2. Lu, Tzovaras, & Gough. (2021). OpenSNP data-freeze of 5,393
+           (19.10.2020) [Data set]. In Computational and Structural
+           Biotechnology Journal. Zenodo.
+           https://doi.org/10.1016/j.csbj.2021.06.040
+        """
+        if self._chip_clusters is None:
+            chip_clusters_path = self._download_file(
+                "https://zenodo.org/records/5047472/files/the_list.tsv.gz",
+                "chip_clusters.tsv.gz",
+            )
+
+            df = pd.read_csv(
+                chip_clusters_path,
+                sep="\t",
+                names=["locus", "clusters"],
+                dtype={"locus": object, "clusters": pd.CategoricalDtype(ordered=False)},
+            )
+            clusters = df.clusters
+            df = df.locus.str.split(":", expand=True)
+            df.rename({0: "chrom", 1: "pos"}, axis=1, inplace=True)
+            df.pos = df.pos.astype(np.uint32)
+            df.chrom = df.chrom.astype(pd.CategoricalDtype(ordered=False))
+            df["clusters"] = clusters
+
+            self._chip_clusters = df
+
+        return self._chip_clusters
+
+    def get_low_quality_snps(self):
+        """Get listing of low quality SNPs for quality control based on chip clusters.
+
+        Returns
+        -------
+        pandas.DataFrame
+
+        References
+        ----------
+        1. Chang Lu, Bastian Greshake Tzovaras, Julian Gough, A survey of
+           direct-to-consumer genotype data, and quality control tool
+           (GenomePrep) for research, Computational and Structural
+           Biotechnology Journal, Volume 19, 2021, Pages 3747-3754, ISSN
+           2001-0370, https://doi.org/10.1016/j.csbj.2021.06.040.
+        2. Lu, Tzovaras, & Gough. (2021). OpenSNP data-freeze of 5,393
+           (19.10.2020) [Data set]. In Computational and Structural
+           Biotechnology Journal. Zenodo.
+           https://doi.org/10.1016/j.csbj.2021.06.040
+        """
+        if self._low_quality_snps is None:
+            low_quality_snps_path = self._download_file(
+                "https://zenodo.org/records/5047472/files/badalleles.tsv.gz",
+                "low_quality_snps.tsv.gz",
+            )
+
+            df = pd.read_csv(
+                low_quality_snps_path,
+                sep="\t",
+                names=["cluster", "loci"],
+            )
+
+            cluster_dfs = []
+            for row in df.itertuples():
+                loci = row.loci.split(",")
+                cluster_dfs.append(
+                    pd.DataFrame({"cluster": [row.cluster] * len(loci), "locus": loci})
+                )
+
+            df = pd.concat(cluster_dfs)
+            df.reset_index(inplace=True, drop=True)
+            cluster = df.cluster.astype(pd.CategoricalDtype(ordered=False))
+            df = df.locus.str.split(":", expand=True)
+            df.rename({0: "chrom", 1: "pos"}, axis=1, inplace=True)
+            df.pos = df.pos.astype(np.uint32)
+            df.chrom = df.chrom.astype(pd.CategoricalDtype(ordered=False))
+            df["cluster"] = cluster
+            self._low_quality_snps = df
+
+        return self._low_quality_snps
 
     def get_dbsnp_151_37_reverse(self):
         """Get and load RSIDs that are on the reference reverse (-) strand in dbSNP 151 and lower.
