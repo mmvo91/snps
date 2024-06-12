@@ -47,7 +47,7 @@ import zlib
 
 import numpy as np
 import pandas as pd
-
+import pandas._libs.lib as lib
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +188,8 @@ class Reader:
         elif first_line.startswith("[Header]"):
             # Global Screening Array, includes SANO and CODIGO46
             d = self.read_gsa(file, compression, comments)
+        elif first_line == "Sample ID\tSNP Name\tChr\tPosition\tAllele1 - Forward\tAllele2 - Forward\r\n":
+            d = self.read_gsa(file, compression, comments, source="SlopesBio", names=first_line.strip().split('\t'))
 
         # detect build from comments if build was not already detected from `read` method
         if not d["build"]:
@@ -892,7 +894,7 @@ class Reader:
 
         return self.read_helper("GenesForGood", parser)
 
-    def _read_gsa_helper(self, file, source):
+    def _read_gsa_helper(self, file, source, names=None):
         def parser():
 
             # read the comments so we get to the actual data
@@ -920,6 +922,7 @@ class Reader:
                     "Position": NORMALIZED_DTYPES["pos"],
                     "Chr": NORMALIZED_DTYPES["chrom"],
                 },
+                names=names if names is not None else lib.no_default
             )
 
             # reserve columns we want out
@@ -1091,7 +1094,7 @@ class Reader:
 
         return self.read_helper("tellmeGen", parser)
 
-    def read_gsa(self, data_or_filename, compresion, comments):
+    def read_gsa(self, data_or_filename, compresion, comments, source=None, names=None):
         """Read and parse Illumina Global Screening Array files
 
 
@@ -1114,11 +1117,13 @@ class Reader:
             source = "Codigo46"
         elif "AKESOgen" in comments:
             source = "AKESOgen"
+        elif source is not None and "SlopesBio" in source:
+            source = "SlopesBio"
         else:
             # default to generic global screening array
             source = "GSA"
 
-        return self._read_gsa_helper(data_or_filename, source)
+        return self._read_gsa_helper(data_or_filename, source, names=names)
 
     def read_dnaland(self, file, compression):
         """Read and parse DNA.land files.
