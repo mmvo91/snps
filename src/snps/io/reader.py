@@ -120,7 +120,11 @@ class Reader:
         else:
             return d
 
-        if "23andMe" in first_line:
+        fourth_line = ""
+        if "23andMe" in comments:
+            fourth_line = comments.split('\r\n')[4]
+
+        if "23andMe" in first_line or "23andMe" in fourth_line:
             # some 23andMe files have separate alleles
             if comments.endswith(
                 "# rsid\tchromosome\tposition\tallele1\tallele2\n"
