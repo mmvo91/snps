@@ -76,12 +76,14 @@ class SNPs:
         self._phased = False
         self._build = 0
         self._build_detected = False
+        self._build_original = 0
         self._output_dir = output_dir
         self._resources = Resources(resources_dir=resources_dir)
         self._parallelizer = Parallelizer(parallelize=parallelize, processes=processes)
         self._cluster = ""
         self._chip = ""
         self._chip_version = ""
+        self._cluster_overlap_computed = False
 
         if file:
             d = self._read_raw_data(file, only_detect_source, rsids)
@@ -102,6 +104,9 @@ class SNPs:
             self._phased = d["phased"]
             self._build = d["build"]
             self._build_detected = True if d["build"] else False
+
+            if self._build_detected:
+                self._build_original = self._build
 
             if not self._snps.empty:
                 self.sort()
@@ -380,6 +385,16 @@ class SNPs:
         bool
         """
         return self._build_detected
+
+    @property
+    def build_original(self):
+        """Original build of SNPs, before any remapping.
+
+        Returns
+        -------
+        int
+        """
+        return self._build_original
 
     @property
     def assembly(self):
@@ -799,8 +814,8 @@ class SNPs:
 
         References
         ----------
-        1. The Variant Call Format (VCF) Version 4.2 Specification, 8 Mar 2019,
-           https://samtools.github.io/hts-specs/VCFv4.2.pdf
+        1. The Variant Call Format (VCF) Version 4.3 Specification, 27 Nov 2022,
+           https://samtools.github.io/hts-specs/VCFv4.3.pdf
         """
         return self._save(
             filename=filename,
@@ -1418,7 +1433,11 @@ class SNPs:
             else:
                 # mapping is on same (plus) strand, so just remap based on offset
                 offset = mapped_start - orig_start
-                temp.loc[snp_indices, "pos"] = temp["pos"] + offset
+
+                # Adjust pos by offset based on sign of offset (avoids OverflowError with uint32)
+                temp.loc[snp_indices, "pos"] = (
+                    temp["pos"] - abs(offset) if offset < 0 else temp["pos"] + offset
+                )
 
             # mark these SNPs as remapped
             temp.loc[snp_indices, "remapped"] = True
@@ -2002,6 +2021,8 @@ class SNPs:
                 logger.warning(
                     "Detected SNPs data source not found in cluster's company composition"
                 )
+
+        self._cluster_overlap_computed = True
 
         return df
 

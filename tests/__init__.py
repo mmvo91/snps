@@ -7,6 +7,7 @@ from unittest.mock import Mock, PropertyMock, patch
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_object_dtype, is_unsigned_integer_dtype
+
 from snps import SNPs
 from snps.utils import gzip_file, zip_file
 
@@ -584,7 +585,7 @@ class BaseSNPsTestCase(TestCase):
         build_detected=False,
         snps_df=None,
     ):
-        # https://samtools.github.io/hts-specs/VCFv4.2.pdf
+        # https://samtools.github.io/hts-specs/VCFv4.3.pdf
         # this tests for homozygous snps, heterozygous snps, multiallelic snps,
         # phased snps, and snps with missing rsID
         self.make_parsing_assertions_vcf(

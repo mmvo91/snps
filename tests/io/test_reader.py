@@ -2,9 +2,9 @@ import os
 import tempfile
 
 from atomicwrites import atomic_write
+
 from snps.resources import Resources
 from snps.utils import gzip_file
-
 from tests import BaseSNPsTestCase
 
 
@@ -154,6 +154,17 @@ class TestReader(BaseSNPsTestCase):
         df.drop("rs5", inplace=True)  # only called genotypes
         self.run_parsing_tests("tests/input/circledna.txt", "CircleDNA", snps_df=df)
 
+    def test_read_plink(self):
+        self.run_parsing_tests("tests/input/plink.txt", "PLINK")
+
+    def test_read_SelfDecode(self):
+        # https://selfdecode.com
+        self.run_parsing_tests("tests/input/selfdecode.txt", "SelfDecode")
+
+    def test_read_23Mofang(self):
+        # https://www.23mofang.com
+        self.run_parsing_tests("tests/input/23mofang.txt", "23Mofang")
+
     def test_read_ftdna(self):
         # https://www.familytreedna.com
         self.run_parsing_tests("tests/input/ftdna.csv", "FTDNA")
@@ -171,7 +182,7 @@ class TestReader(BaseSNPsTestCase):
         # generate content of second file
         s2 = "RSID,CHROMOSOME,POSITION,RESULT\r\n"
         for i in range(0, total_snps2):
-            s2 += f'"rs{total_snps1 + 1 + i}","1","{ total_snps1 + 101 + i}","AA"\r\n'
+            s2 += f'"rs{total_snps1 + 1 + i}","1","{total_snps1 + 101 + i}","AA"\r\n'
         snps_df = self.create_snp_df(
             rsid=[f"rs{1 + i}" for i in range(0, total_snps1 + total_snps2)],
             chrom="1",
@@ -302,6 +313,11 @@ class TestReader(BaseSNPsTestCase):
             self._setup_gsa_test(tmpdir)
             self.run_parsing_tests("tests/input/sano.txt", "Sano")
             self._teardown_gsa_test()
+
+    def test_read_sano_dtc(self):
+        # https://sanogenetics.com
+        self.run_parsing_tests("tests/input/sano_dtc.txt", "Sano")
+        self.run_parsing_tests("tests/input/sano_dtc_no_comments.txt", "Sano")
 
     def test_read_vcf(self):
         self.run_parsing_tests_vcf("tests/input/testvcf.vcf")

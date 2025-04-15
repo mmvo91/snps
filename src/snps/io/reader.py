@@ -154,21 +154,35 @@ class Reader:
             d = self.read_snps_csv(file, comments, compression)
         elif "rsid\tChromosome\tposition\tgenotype" == first_line.strip():
             d = self.read_tellmegen(file, compression)
+        elif "23Mofang" in first_line or "23Mofang" in comments:
+            d = self.read_23Mofang(file, compression)
+        elif (
+            "# This file was derived from the corresponding VCF" in comments
+            or re.match(
+                r"^\s*rsid\s+chromosome\s+position\s+allele_1\s+allele_2\s*$",
+                first_line,
+            )
+        ):
+            d = self.read_sano_dtc(file, compression)
         elif re.match("^#*[ \t]*rsid[, \t]*chr", first_line):
             d = self.read_generic(file, compression)
         elif re.match("^rs[0-9]*[, \t]{1}[1]", first_line):
             d = self.read_generic(file, compression, skip=0)
         elif "vcf" in comments.lower() or "##contig" in comments.lower():
-            d = self.read_vcf(file, compression, "vcf", self._rsids)
+            d = self.read_vcf(file, compression, "vcf", self._rsids, comments)
         elif ("Genes for Good" in comments) | ("PLINK" in comments):
             d = self.read_genes_for_good(file, compression)
         elif "DNA.Land" in comments:
             d = self.read_dnaland(file, compression)
+        elif "SelfDecode" in comments:
+            d = self.read_selfdecode(file, compression)
         elif first_line.startswith("[Header]"):
             # Global Screening Array, includes SANO and CODIGO46
             d = self.read_gsa(file, compression, comments)
         elif "Circle" in first_line:
             d = self.read_circledna(file, compression)
+        elif "# Below is a text version of your data." in comments:
+            d = self.read_plink(file, compression)
         elif first_line == "Sample ID\tSNP Name\tChr\tPosition\tAllele1 - Forward\tAllele2 - Forward\r\n":
             d = self.read_gsa(file, compression, comments, source="SlopesBio", names=first_line.strip().split('\t'))
 
@@ -412,8 +426,14 @@ class Reader:
         def parser():
             if joined:
                 columnnames = ["rsid", "chrom", "pos", "genotype"]
+                dtype = NORMALIZED_DTYPES.copy()
             else:
                 columnnames = ["rsid", "chrom", "pos", "allele1", "allele2"]
+                dtype = TWO_ALLELE_DTYPES.copy()
+
+            # Temporarily use nullable UInt32 for 'pos' column
+            dtype["pos"] = pd.UInt32Dtype()
+
             df = pd.read_csv(
                 file,
                 comment="#",
@@ -421,59 +441,15 @@ class Reader:
                 na_values=["--", "-"],
                 names=columnnames,
                 compression=compression,
+                dtype=dtype,
             )
-            # turn number numbers into string numbers
-            df["chrom"] = df["chrom"].map(
-                {
-                    "1": "1",
-                    "2": "2",
-                    "3": "3",
-                    "4": "4",
-                    "5": "5",
-                    "6": "6",
-                    "7": "7",
-                    "8": "8",
-                    "9": "9",
-                    "10": "10",
-                    "11": "11",
-                    "12": "12",
-                    "13": "13",
-                    "14": "14",
-                    "15": "15",
-                    "16": "16",
-                    "17": "17",
-                    "18": "18",
-                    "19": "19",
-                    "20": "20",
-                    "21": "21",
-                    "22": "22",
-                    1: "1",
-                    2: "2",
-                    3: "3",
-                    4: "4",
-                    5: "5",
-                    6: "6",
-                    7: "7",
-                    8: "8",
-                    9: "9",
-                    10: "10",
-                    11: "11",
-                    12: "12",
-                    13: "13",
-                    14: "14",
-                    15: "15",
-                    16: "16",
-                    17: "17",
-                    18: "18",
-                    19: "19",
-                    20: "20",
-                    21: "21",
-                    22: "22",
-                    "X": "X",
-                    "Y": "Y",
-                    "MT": "MT",
-                }
-            )
+
+            # Drop rows with NaN values in 'pos' column
+            df = df.dropna(subset=["pos"])
+
+            # Convert 'pos' column to np.uint32
+            df["pos"] = df["pos"].astype(np.uint32)
+
             if not joined:
                 # stick separate alleles together
                 df["genotype"] = df["allele1"] + df["allele2"]
@@ -1175,6 +1151,217 @@ class Reader:
 
         return self.read_helper("CircleDNA", parser)
 
+    def read_sano_dtc(self, file, compression):
+        """Read and parse Sano Genetics DTC file.
+
+        https://sanogenetics.com
+
+        Parameters
+        ----------
+        file : str
+            path to file
+
+        Returns
+        -------
+        dict
+            result of `read_helper`
+        """
+
+        def parser():
+            df = pd.read_csv(
+                file,
+                comment="#",
+                header=0,
+                engine="c",
+                sep=r"\s+",
+                na_values="-",
+                names=["rsid", "chrom", "pos", "allele1", "allele2"],
+                index_col=0,
+                dtype=TWO_ALLELE_DTYPES,
+                compression=compression,
+            )
+
+            # create genotype column from allele columns and keep only relevant columns
+            df = df.assign(genotype=df["allele1"] + df["allele2"].fillna(""))[
+                ["chrom", "pos", "genotype"]
+            ]
+
+            return (df,)
+
+        return self.read_helper("Sano", parser)
+
+    def read_selfdecode(self, file, compression):
+        """Read and parse SelfDecode file.
+
+        https://selfdecode.com/
+
+        Parameters
+        ----------
+        file : str
+            path to file
+        Returns
+        -------
+        dict
+            result of `read_helper`
+        """
+
+        def parser():
+            columnnames = ["rsid", "chrom", "pos", "genotype"]
+            dtype = NORMALIZED_DTYPES.copy()
+
+            # Temporarily use nullable UInt32 for 'pos' column
+            dtype["pos"] = pd.UInt32Dtype()
+            df = pd.read_csv(
+                file,
+                comment="#",
+                sep="\t",
+                na_values="--",
+                names=columnnames,
+                compression=compression,
+                dtype=dtype,
+            )
+            # Drop rows with NaN values in 'pos' column
+            df = df.dropna(subset=["pos"])
+            # Convert 'pos' column to np.uint32
+            df["pos"] = df["pos"].astype(np.uint32)
+
+            df = df.dropna(subset=["rsid", "chrom", "pos"])
+            df = df.astype(dtype=NORMALIZED_DTYPES)
+            df = df.set_index("rsid")
+            return (df,)
+
+        return self.read_helper("SelfDecode", parser)
+
+    def read_23Mofang(self, file, compression):
+        """Read and parse 23Mofang file.
+
+        https://www.23mofang.com/
+
+        Parameters
+        ----------
+        file : str
+            path to file
+
+        Returns
+        -------
+        dict
+            result of `read_helper`
+        """
+
+        def parser():
+            columnnames = ["rsid", "chrom", "pos", "genotype"]
+            dtype = NORMALIZED_DTYPES.copy()
+
+            # Temporarily use nullable UInt32 for 'pos' column
+            dtype["pos"] = pd.UInt32Dtype()
+
+            df = pd.read_csv(
+                file,
+                comment="#",
+                sep="\t",
+                na_values=["--", "-"],
+                names=columnnames,
+                compression=compression,
+                dtype=dtype,
+            )
+
+            # Drop rows with NaN values in 'pos' column
+            df = df.dropna(subset=["pos"])
+
+            # Convert 'pos' column to np.uint32
+            df["pos"] = df["pos"].astype(np.uint32)
+
+            df = df.dropna(subset=["rsid", "chrom", "pos"])
+            df = df.astype(dtype=NORMALIZED_DTYPES)
+            df = df.set_index("rsid")
+            return (df,)
+
+        return self.read_helper("23Mofang", parser)
+
+    def read_plink(self, file, compression):
+        """Read and parse plink file.
+
+        Parameters
+        ----------
+        file : str
+            path to file
+
+        Returns
+        -------
+        dict
+            result of `read_helper`
+        """
+
+        def parser():
+            columnnames = ["rsid", "chrom", "pos", "genotype"]
+            df = pd.read_csv(
+                file,
+                comment="#",
+                sep="\t",
+                na_values=["--", "-"],
+                names=columnnames,
+                compression=compression,
+            )
+            # turn number numbers into string numbers
+            df["chrom"] = df["chrom"].map(
+                {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5",
+                    "6": "6",
+                    "7": "7",
+                    "8": "8",
+                    "9": "9",
+                    "10": "10",
+                    "11": "11",
+                    "12": "12",
+                    "13": "13",
+                    "14": "14",
+                    "15": "15",
+                    "16": "16",
+                    "17": "17",
+                    "18": "18",
+                    "19": "19",
+                    "20": "20",
+                    "21": "21",
+                    "22": "22",
+                    1: "1",
+                    2: "2",
+                    3: "3",
+                    4: "4",
+                    5: "5",
+                    6: "6",
+                    7: "7",
+                    8: "8",
+                    9: "9",
+                    10: "10",
+                    11: "11",
+                    12: "12",
+                    13: "13",
+                    14: "14",
+                    15: "15",
+                    16: "16",
+                    17: "17",
+                    18: "18",
+                    19: "19",
+                    20: "20",
+                    21: "21",
+                    22: "22",
+                    "X": "X",
+                    "Y": "Y",
+                    "XY": "Y",
+                    "MT": "MT",
+                }
+            )
+            df = df.dropna(subset=["rsid", "chrom", "pos"])
+            df = df.astype(dtype=NORMALIZED_DTYPES)
+            df = df.set_index("rsid")
+            return (df,)
+
+        return self.read_helper("PLINK", parser)
+
     def read_snps_csv(self, file, comments, compression):
         """Read and parse CSV file generated by ``snps``.
 
@@ -1302,7 +1489,7 @@ class Reader:
 
         return self.read_helper("generic", parser)
 
-    def read_vcf(self, file, compression, provider, rsids=()):
+    def read_vcf(self, file, compression, provider, rsids=(), comments=""):
         """Read and parse VCF file.
 
         Notes
@@ -1313,7 +1500,7 @@ class Reader:
             * SNPs that are not annotated with an RSID are skipped
             * If the VCF contains multiple samples, only the first sample is used to
               lookup the genotype
-            * Insertions and deletions are skipped
+            * Precise insertions and deletions are skipped
             * If a sample allele is not specified, the genotype is reported as NaN
             * If a sample allele refers to a REF or ALT allele that is not specified,
               the genotype is reported as NaN
@@ -1339,6 +1526,17 @@ class Reader:
                 df, phased = self._parse_vcf(file, rsids)
 
             return (df, phased)
+
+        header_lines = comments.replace("\r\n", "\n").split("\n")
+
+        detected_company = ""
+        for line in header_lines:
+            if line.startswith("##detectedCompany="):
+                detected_company = line.split("=")[1].strip('"')
+                break
+
+        if detected_company:
+            provider = detected_company
 
         return self.read_helper(provider, parser)
 
@@ -1388,9 +1586,13 @@ class Reader:
                 if len(alt.split(",")) > 1 and alt.split(",")[1] == "<NON_REF>":
                     alt = alt.split(",")[0]
 
-                ref_alt = [ref] + alt.split(",")
+                # Handle <INS> and <DEL> alleles (imprecise insertions and deletions)
+                ref_alt = [ref] + [
+                    "I" if allele == "<INS>" else "D" if allele == "<DEL>" else allele
+                    for allele in alt.split(",")
+                ]
 
-                # skip insertions and deletions
+                # skip precise insertions and deletions
                 if sum(map(len, ref_alt)) > len(ref_alt):
                     continue
 

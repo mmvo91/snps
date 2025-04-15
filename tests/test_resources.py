@@ -10,10 +10,10 @@ from unittest.mock import Mock, mock_open, patch
 import numpy as np
 import pandas as pd
 from atomicwrites import atomic_write
+
 from snps import SNPs
 from snps.resources import ReferenceSequence, Resources
 from snps.utils import gzip_file
-
 from tests import BaseSNPsTestCase
 
 
@@ -184,7 +184,7 @@ class TestResources(BaseSNPsTestCase):
             self.assertEqual(
                 seqs["MT"].path,
                 os.path.relpath(
-                    f'{os.path.join(self.resource._resources_dir,"fasta", assembly_expect,os.path.basename(url_expect))}'
+                    f"{os.path.join(self.resource._resources_dir, 'fasta', assembly_expect, os.path.basename(url_expect))}"
                 ),
             )
             self.assertTrue(os.path.exists(seqs["MT"].path))
@@ -261,7 +261,7 @@ class TestResources(BaseSNPsTestCase):
             self.assertEqual(
                 seqs["MT"].path,
                 os.path.relpath(
-                    f'{os.path.join(self.resource._resources_dir,"fasta", "GRCh37","Homo_sapiens.GRCh37.dna.chromosome.MT.fa.gz")}'
+                    f"{os.path.join(self.resource._resources_dir, 'fasta', 'GRCh37', 'Homo_sapiens.GRCh37.dna.chromosome.MT.fa.gz')}"
                 ),
             )
             self.assertTrue(os.path.exists(seqs["MT"].path))
