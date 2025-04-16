@@ -676,12 +676,12 @@ class SNPs:
             DeprecationWarning,
         )
         return self._save(
-            filename,
-            vcf,
-            atomic,
-            vcf_alt_unavailable,
-            vcf_qc_only,
-            vcf_qc_filter,
+            filename=filename,
+            vcf=vcf,
+            atomic=atomic,
+            vcf_alt_unavailable=vcf_alt_unavailable,
+            vcf_qc_only=vcf_qc_only,
+            vcf_qc_filter=vcf_qc_filter,
             **kwargs,
         )
 
