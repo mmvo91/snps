@@ -122,7 +122,10 @@ class Reader:
 
         fourth_line = ""
         if "23andMe" in comments:
-            fourth_line = comments.split('\r\n')[4]
+            try:
+                fourth_line = comments.split('\r\n')[4]
+            except IndexError:
+                pass
 
         if "23andMe" in first_line or "23andMe" in fourth_line:
             # some 23andMe files have separate alleles
